@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ethers } from 'ethers';
 import { contractAddress } from './contractInfo';
 import { contractABI } from './contractABI';
@@ -15,234 +15,405 @@ function App() {
   const [studentAddress, setStudentAddress] = useState('');
   const [studentName, setStudentName] = useState('');
   const [studentRoll, setStudentRoll] = useState('');
-  const [presentStudents, setPresentStudents] = useState('');
 
   const [allStudents, setAllStudents] = useState([]);
+  const [selectedStudents, setSelectedStudents] = useState([]);
   const [attendanceCount, setAttendanceCount] = useState(0);
   const [tokenBalance, setTokenBalance] = useState(0);
 
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isMarking, setIsMarking] = useState(false);
+  const [search, setSearch] = useState('');
+
+  // helpers
+  const formatAddress = (addr) =>
+    addr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : '';
+
+  const filteredStudents = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return allStudents;
+    return allStudents.filter((s) =>
+      [s.name, s.roll, s.address].some((t) =>
+        String(t ?? '').toLowerCase().includes(q)
+      )
+    );
+  }, [search, allStudents]);
+
+  const allVisibleSelected =
+    filteredStudents.length > 0 &&
+    filteredStudents.every((s) => selectedStudents.includes(s.address));
+
+  useEffect(() => {
+    if (account && contract) {
+      fetchStudentData(account, contract);
+      fetchAllStudents(contract);
+    }
+  }, [account, contract]);
+
   useEffect(() => {
     if (window.ethereum) {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      setProvider(provider);
+      const prov = new ethers.BrowserProvider(window.ethereum);
+      setProvider(prov);
+
+      // Auto-handle account/network changes
+      window.ethereum.on?.('accountsChanged', () => {
+        setAccount(null);
+        setSigner(null);
+        setContract(null);
+        setIsOwner(false);
+        setSelectedStudents([]);
+      });
+      window.ethereum.on?.('chainChanged', () => {
+        window.location.reload();
+      });
     } else {
-      console.error("Please install MetaMask!");
+      console.error('Please install MetaMask!');
+      toast.error('Please install MetaMask to use this application.');
     }
   }, []);
 
   const connectWallet = async () => {
     if (!provider) return;
     try {
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-      const signer = await provider.getSigner();
-      const contractInstance = new ethers.Contract(contractAddress, contractABI, signer);
+      const accounts = await window.ethereum.request({
+        method: 'eth_requestAccounts',
+      });
+      const s = await provider.getSigner();
+      const c = new ethers.Contract(contractAddress, contractABI, s);
 
       setAccount(accounts[0]);
-      setSigner(signer);
-      setContract(contractInstance);
+      setSigner(s);
+      setContract(c);
 
-      const owner = await contractInstance.owner();
+      const owner = await c.owner();
       setIsOwner(accounts[0].toLowerCase() === owner.toLowerCase());
 
-      fetchStudentData(accounts[0], contractInstance);
-      fetchAllStudents(contractInstance);
+      fetchStudentData(accounts[0], c);
+      fetchAllStudents(c);
     } catch (error) {
-      console.error("Error connecting wallet:", error);
+      console.error('Error connecting wallet:', error);
+      toast.error('Error connecting wallet. See console for details.');
     }
   };
 
   const fetchStudentData = async (currentAccount, contractInstance) => {
-    const isRegistered = await contractInstance.isRegistered(currentAccount);
-    if (isRegistered) {
-      const count = await contractInstance.getAttendanceCount(currentAccount);
-      const balance = await contractInstance.balanceOf(currentAccount);
-      setAttendanceCount(Number(count));
-      setTokenBalance(ethers.formatUnits(balance, 18));
-    } else {
-      setAttendanceCount(0);
-      setTokenBalance(0);
+    try {
+      setIsLoading(true);
+      const isRegistered = await contractInstance.isRegistered(currentAccount);
+      if (isRegistered) {
+        const count = await contractInstance.getAttendanceCount(currentAccount);
+        const balance = await contractInstance.balanceOf(currentAccount);
+        setAttendanceCount(Number(count));
+        setTokenBalance(ethers.formatUnits(balance, 18));
+      } else {
+        setAttendanceCount(0);
+        setTokenBalance(0);
+      }
+    } catch (error) {
+      console.error('Error fetching student data:', error);
+      toast.error('Error fetching student data. See console for details.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const fetchAllStudents = async (contractInstance) => {
     try {
+      setIsLoading(true);
       const studentAddresses = await contractInstance.getAllStudents();
-      
       const studentDetails = await Promise.all(
         studentAddresses.map(async (address) => {
-          const [name, roll, attendanceCount] = await contractInstance.getStudentDetails(address);
-          return { address, name, roll, attendanceCount };
+          const [name, roll, count] =
+            await contractInstance.getStudentDetails(address);
+          return { address, name, roll, attendanceCount: Number(count) };
         })
       );
-
+      // newest first (optional): stable order is okay too
+      studentDetails.sort((a, b) => a.name.localeCompare(b.name));
       setAllStudents(studentDetails);
     } catch (error) {
-      console.error("Error fetching all students:", error);
-      toast.error("Error fetching registered students. See console for details.");
+      console.error('Error fetching all students:', error);
+      toast.error('Error fetching registered students. See console for details.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleAddStudent = async (e) => {
     e.preventDefault();
-    if (contract && isOwner) {
-      try {
-        const tx = await contract.addStudent(studentAddress, studentName, studentRoll);
-        await tx.wait();
-        toast.success('Student added successfully!');
-        setStudentAddress('');
-        setStudentName('');
-        setStudentRoll('');
-        fetchAllStudents(contract);
-      } catch (error) {
-        console.error("Error adding student:", error);
-        toast.error('Error adding student. See console for details.');
-      }
+    if (!(contract && isOwner)) return;
+    try {
+      setIsSubmitting(true);
+      const tx = await contract.addStudent(
+        studentAddress.trim(),
+        studentName.trim(),
+        studentRoll.trim()
+      );
+      await tx.wait();
+      toast.success('Student added successfully!');
+      setStudentAddress('');
+      setStudentName('');
+      setStudentRoll('');
+      fetchAllStudents(contract);
+    } catch (error) {
+      console.error('Error adding student:', error);
+      toast.error('Error adding student. See console for details.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleMarkAttendance = async (e) => {
-    e.preventDefault();
-    if (contract && isOwner) {
-      try {
-        const addresses = presentStudents
-          .split(',')
-          .map(addr => addr.trim())
-          .filter(Boolean);
+  const toggleStudentSelection = (address) => {
+    if (!isOwner) return;
+    setSelectedStudents((prev) =>
+      prev.includes(address)
+        ? prev.filter((a) => a !== address)
+        : [...prev, address]
+    );
+  };
 
-        const tx = await contract.markAttendance(addresses);
-        await tx.wait();
-        toast.success('Attendance marked successfully!');
-        setPresentStudents('');
+  const toggleSelectAllVisible = () => {
+    if (!isOwner) return;
+    if (allVisibleSelected) {
+      // unselect all visible
+      const visibleSet = new Set(filteredStudents.map((s) => s.address));
+      setSelectedStudents((prev) => prev.filter((a) => !visibleSet.has(a)));
+    } else {
+      // add all visible
+      const addrs = filteredStudents.map((s) => s.address);
+      setSelectedStudents((prev) => Array.from(new Set([...prev, ...addrs])));
+    }
+  };
 
-        if (account) {
-          fetchStudentData(account, contract);
-        }
-      } catch (error) {
-        console.error("Error marking attendance:", error);
-        toast.error('Error marking attendance. See console for details.');
-      }
+  const handleMarkAttendance = async () => {
+    if (!(contract && isOwner)) return;
+    if (selectedStudents.length === 0) {
+      toast.error('Please select at least one student to mark attendance.');
+      return;
+    }
+    try {
+      setIsMarking(true);
+      const tx = await contract.markAttendance(selectedStudents);
+      await tx.wait();
+      toast.success('Attendance marked for selected students!');
+      setSelectedStudents([]);
+      fetchAllStudents(contract);
+      if (account) fetchStudentData(account, contract);
+    } catch (error) {
+      console.error('Error marking attendance:', error);
+      toast.error('Error marking attendance. See console for details.');
+    } finally {
+      setIsMarking(false);
+    }
+  };
+
+  const handleRefreshData = () => {
+    if (account && contract) {
+      fetchStudentData(account, contract);
+      fetchAllStudents(contract);
+      toast.success('Data refreshed!');
     }
   };
 
   return (
     <div className="App">
       <Toaster />
-      <header className="App-header">
-        <h1>Token-Based Attendance System</h1>
-        <p className="subhead">Manage class roll calls and reward students with on-chain ATT tokens.</p>
-
-        {!account ? (
-          <button onClick={connectWallet}>Connect Wallet</button>
-        ) : (
-          <>
-            <div className="account-line">
-              <span>Connected Account</span>
-              <span className="tag" title={account}>{account}</span>
+      <header className="app-navbar glass">
+        <div className="nav-left">
+          <div className="brand">
+            <span className="logo-dot" />
+            <span className="brand-text">ATTendance</span>
+          </div>
+        </div>
+        <div className="nav-right">
+          {account ? (
+            <div className="wallet-wrap">
+              <span className="pill">{isOwner ? 'Teacher' : 'Student'}</span>
+              <span className="addr">{formatAddress(account)}</span>
+              <button className="btn secondary" onClick={handleRefreshData}>
+                Refresh
+              </button>
             </div>
-            {isOwner ? (
-              <p className="role-indicator">Role: Teacher (Owner)</p>
-            ) : (
-              <p className="role-indicator">Role: Student</p>
-            )}
-          </>
-        )}
+          ) : (
+            <button className="btn primary" onClick={connectWallet}>
+              Connect Wallet
+            </button>
+          )}
+        </div>
       </header>
 
-      {account && (
-        <main>
-          {isOwner && (
-            <section className="teacher-panel">
-              <h2>Teacher Panel</h2>
+      {account ? (
+        <div className="container">
+          <main className="layout">
+            {/* LEFT: Teacher panel / profile */}
+            <aside className="sidebar panel">
+              <div className="user-card">
+                <div className="avatar">{isOwner ? '👩‍🏫' : '🎓'}</div>
+                <div>
+                  <div className="user-title">
+                    {isOwner ? 'Teacher Dashboard' : 'Student Dashboard'}
+                  </div>
+                  <div className="user-subtitle">
+                    {formatAddress(account)}
+                  </div>
+                </div>
+              </div>
 
-              <form onSubmit={handleAddStudent}>
-                <h3>Add Student</h3>
+              <div className="metric-stack">
+                <div className="metric-card">
+                  <div className="metric-label">Total Attendance</div>
+                  <div className="metric-value">
+                    {isLoading ? '—' : attendanceCount}
+                  </div>
+                </div>
+                <div className="metric-card">
+                  <div className="metric-label">ATT Token Balance</div>
+                  <div className="metric-value">
+                    {isLoading ? '—' : tokenBalance}
+                  </div>
+                </div>
+              </div>
 
-                <label>
-                  Student Wallet Address
+              {isOwner && (
+                <form className="add-form" onSubmit={handleAddStudent}>
+                  <div className="section-title">Add Student</div>
                   <input
                     type="text"
-                    placeholder="0xabc...123"
+                    placeholder="Wallet address"
                     value={studentAddress}
                     onChange={(e) => setStudentAddress(e.target.value)}
                     required
-                    aria-label="Student wallet address"
                   />
-                </label>
-
-                <label>
-                  Student Name
                   <input
                     type="text"
-                    placeholder="Alice Johnson"
+                    placeholder="Full name"
                     value={studentName}
                     onChange={(e) => setStudentName(e.target.value)}
                     required
-                    aria-label="Student name"
                   />
-                </label>
-
-                <label>
-                  Student Roll No.
                   <input
                     type="text"
-                    placeholder="IMT-069"
+                    placeholder="Roll number"
                     value={studentRoll}
                     onChange={(e) => setStudentRoll(e.target.value)}
                     required
-                    aria-label="Student roll number"
                   />
-                </label>
+                  <button className="btn primary" type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? 'Adding…' : 'Add Student'}
+                  </button>
+                </form>
+              )}
+            </aside>
 
-                <button type="submit">Add Student</button>
-                <p className="helper">Adds a new student and initializes their on-chain ATT balance.</p>
-              </form>
+            {/* RIGHT: Students & actions */}
+            <section className="content">
+              <div className="panel">
+                <div className="content-header">
+                  <h2 className="panel-title">Registered Students</h2>
+                  <div className="actions-row">
+                    <input
+                      className="search"
+                      type="text"
+                      placeholder="Search by name, roll or address…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                    {isOwner && (
+                      <button
+                        className="btn ghost"
+                        onClick={toggleSelectAllVisible}
+                        disabled={filteredStudents.length === 0}
+                        title={
+                          allVisibleSelected
+                            ? 'Unselect all visible'
+                            : 'Select all visible'
+                        }
+                      >
+                        {allVisibleSelected ? 'Unselect All' : 'Select All'}
+                      </button>
+                    )}
+                  </div>
+                </div>
 
-              <form onSubmit={handleMarkAttendance}>
-                <h3>Mark Attendance</h3>
+                {isLoading ? (
+                  <div className="empty">Loading students…</div>
+                ) : filteredStudents.length === 0 ? (
+                  <div className="empty">
+                    {allStudents.length === 0
+                      ? 'No students registered yet.'
+                      : 'No matches for your search.'}
+                  </div>
+                ) : (
+                  <div className="student-grid">
+                    {filteredStudents.map((s) => {
+                      const selected = selectedStudents.includes(s.address);
+                      return (
+                        <button
+                          key={s.address}
+                          type="button"
+                          className={`student-card ${selected ? 'selected' : ''} ${
+                            isOwner ? 'clickable' : ''
+                          }`}
+                          onClick={() => toggleStudentSelection(s.address)}
+                          aria-pressed={selected}
+                        >
+                          <div className="student-top">
+                            <div className="student-name">{s.name}</div>
+                            {isOwner && (
+                              <div className={`chip ${selected ? 'ok' : 'neutral'}`}>
+                                {selected ? 'Selected' : 'Tap to select'}
+                              </div>
+                            )}
+                          </div>
+                          <div className="student-meta">
+                            <span className="badge">Roll: {s.roll}</span>
+                            <span className="badge">
+                              Attendance: {s.attendanceCount}
+                            </span>
+                          </div>
+                          <div className="student-addr">{formatAddress(s.address)}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
-                <label>
-                  Comma-separated student addresses
-                  <input
-                    type="text"
-                    placeholder="0xabc..., 0xdef..., 0x123..."
-                    value={presentStudents}
-                    onChange={(e) => setPresentStudents(e.target.value)}
-                    required
-                    aria-label="Comma separated addresses"
-                  />
-                </label>
-
-                <button type="submit">Mark Attendance</button>
-                <p className="helper">Example: <span className="tag">0x1..., 0x2..., 0x3...</span></p>
-              </form>
+              {isOwner && (
+                <div className="sticky-bar glass">
+                  <div className="sticky-info">
+                    <span>
+                      Selected: <b>{selectedStudents.length}</b>
+                    </span>
+                  </div>
+                  <button
+                    className="btn primary"
+                    onClick={handleMarkAttendance}
+                    disabled={selectedStudents.length === 0 || isMarking}
+                  >
+                    {isMarking
+                      ? 'Marking…'
+                      : `Mark Attendance (${selectedStudents.length})`}
+                  </button>
+                </div>
+              )}
             </section>
-          )}
-
-          <section className="student-panel">
-            <h2>Student Dashboard</h2>
-            <div className="stats">
-              <div className="stat">
-                <div className="stat-label">Total Attendance</div>
-                <div className="stat-value">{attendanceCount}</div>
-              </div>
-              <div className="stat">
-                <div className="stat-label">ATT Token Balance</div>
-                <div className="stat-value">{tokenBalance}</div>
-              </div>
-            </div>
-          </section>
-
-                <div className="student-list">
-        <h3>Registered Students</h3>
-        <ul>
-          {allStudents.map((student, index) => (
-            <li key={index}>
-              <strong>{student.name}</strong>&nbsp;<small>{student.address}</small>
-            </li>
-          ))}
-        </ul>
-      </div>
-        </main>
+          </main>
+        </div>
+      ) : (
+        <div className="center-cta">
+          <div className="panel hero">
+            <h1 className="hero-title">Token-Based Attendance</h1>
+            <p className="hero-sub">
+              Reward presence with ATT tokens. Teachers add students, select them,
+              and mark attendance in one click.
+            </p>
+            <button className="btn primary" onClick={connectWallet}>
+              Connect MetaMask to Start
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
