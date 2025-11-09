@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import { contractAddress } from './contractInfo';
 import { contractABI } from './contractABI';
 import './App.css';
+import toast, { Toaster } from 'react-hot-toast';
 
 function App() {
   const [provider, setProvider] = useState(null);
@@ -30,25 +31,23 @@ function App() {
   }, []);
 
   const connectWallet = async () => {
-    if (provider) {
-      try {
-        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        const signer = await provider.getSigner();
-        const contractInstance = new ethers.Contract(contractAddress, contractABI, signer);
+    if (!provider) return;
+    try {
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      const signer = await provider.getSigner();
+      const contractInstance = new ethers.Contract(contractAddress, contractABI, signer);
 
-        setAccount(accounts[0]);
-        setSigner(signer);
-        setContract(contractInstance);
+      setAccount(accounts[0]);
+      setSigner(signer);
+      setContract(contractInstance);
 
-        const owner = await contractInstance.owner();
-        setIsOwner(accounts[0].toLowerCase() === owner.toLowerCase());
-        
-        fetchStudentData(accounts[0], contractInstance);
-        fetchAllStudents(contractInstance);
+      const owner = await contractInstance.owner();
+      setIsOwner(accounts[0].toLowerCase() === owner.toLowerCase());
 
-      } catch (error) {
-        console.error("Error connecting wallet:", error);
-      }
+      fetchStudentData(accounts[0], contractInstance);
+      fetchAllStudents(contractInstance);
+    } catch (error) {
+      console.error("Error connecting wallet:", error);
     }
   };
 
@@ -59,12 +58,28 @@ function App() {
       const balance = await contractInstance.balanceOf(currentAccount);
       setAttendanceCount(Number(count));
       setTokenBalance(ethers.formatUnits(balance, 18));
+    } else {
+      setAttendanceCount(0);
+      setTokenBalance(0);
     }
   };
 
   const fetchAllStudents = async (contractInstance) => {
-    const students = await contractInstance.getAllStudents();
-    setAllStudents(students);
+    try {
+      const studentAddresses = await contractInstance.getAllStudents();
+      
+      const studentDetails = await Promise.all(
+        studentAddresses.map(async (address) => {
+          const [name, roll, attendanceCount] = await contractInstance.getStudentDetails(address);
+          return { address, name, roll, attendanceCount };
+        })
+      );
+
+      setAllStudents(studentDetails);
+    } catch (error) {
+      console.error("Error fetching all students:", error);
+      toast.error("Error fetching registered students. See console for details.");
+    }
   };
 
   const handleAddStudent = async (e) => {
@@ -73,14 +88,14 @@ function App() {
       try {
         const tx = await contract.addStudent(studentAddress, studentName, studentRoll);
         await tx.wait();
-        alert('Student added successfully!');
+        toast.success('Student added successfully!');
         setStudentAddress('');
         setStudentName('');
         setStudentRoll('');
         fetchAllStudents(contract);
       } catch (error) {
         console.error("Error adding student:", error);
-        alert('Error adding student. See console for details.');
+        toast.error('Error adding student. See console for details.');
       }
     }
   };
@@ -89,93 +104,143 @@ function App() {
     e.preventDefault();
     if (contract && isOwner) {
       try {
-        const addresses = presentStudents.split(',').map(addr => addr.trim());
+        const addresses = presentStudents
+          .split(',')
+          .map(addr => addr.trim())
+          .filter(Boolean);
+
         const tx = await contract.markAttendance(addresses);
         await tx.wait();
-        alert('Attendance marked successfully!');
+        toast.success('Attendance marked successfully!');
         setPresentStudents('');
-        // Re-fetch data for the current user if they are a student
+
         if (account) {
-            fetchStudentData(account, contract);
+          fetchStudentData(account, contract);
         }
       } catch (error) {
         console.error("Error marking attendance:", error);
-        alert('Error marking attendance. See console for details.');
+        toast.error('Error marking attendance. See console for details.');
       }
     }
   };
 
   return (
     <div className="App">
+      <Toaster />
       <header className="App-header">
         <h1>Token-Based Attendance System</h1>
+        <p className="subhead">Manage class roll calls and reward students with on-chain ATT tokens.</p>
+
         {!account ? (
           <button onClick={connectWallet}>Connect Wallet</button>
         ) : (
-          <div>
-            <p>Connected Account: {account}</p>
-            {isOwner && <p className="role-indicator">Role: Teacher (Owner)</p>}
-            {!isOwner && <p className="role-indicator">Role: Student</p>}
-          </div>
+          <>
+            <div className="account-line">
+              <span>Connected Account</span>
+              <span className="tag" title={account}>{account}</span>
+            </div>
+            {isOwner ? (
+              <p className="role-indicator">Role: Teacher (Owner)</p>
+            ) : (
+              <p className="role-indicator">Role: Student</p>
+            )}
+          </>
         )}
       </header>
 
       {account && (
         <main>
           {isOwner && (
-            <div className="teacher-panel">
+            <section className="teacher-panel">
               <h2>Teacher Panel</h2>
+
               <form onSubmit={handleAddStudent}>
                 <h3>Add Student</h3>
-                <input
-                  type="text"
-                  placeholder="Student Wallet Address"
-                  value={studentAddress}
-                  onChange={(e) => setStudentAddress(e.target.value)}
-                  required
-                />
-                <input
-                  type="text"
-                  placeholder="Student Name"
-                  value={studentName}
-                  onChange={(e) => setStudentName(e.target.value)}
-                  required
-                />
-                <input
-                  type="text"
-                  placeholder="Student Roll No."
-                  value={studentRoll}
-                  onChange={(e) => setStudentRoll(e.target.value)}
-                  required
-                />
+
+                <label>
+                  Student Wallet Address
+                  <input
+                    type="text"
+                    placeholder="0xabc...123"
+                    value={studentAddress}
+                    onChange={(e) => setStudentAddress(e.target.value)}
+                    required
+                    aria-label="Student wallet address"
+                  />
+                </label>
+
+                <label>
+                  Student Name
+                  <input
+                    type="text"
+                    placeholder="Alice Johnson"
+                    value={studentName}
+                    onChange={(e) => setStudentName(e.target.value)}
+                    required
+                    aria-label="Student name"
+                  />
+                </label>
+
+                <label>
+                  Student Roll No.
+                  <input
+                    type="text"
+                    placeholder="IMT-069"
+                    value={studentRoll}
+                    onChange={(e) => setStudentRoll(e.target.value)}
+                    required
+                    aria-label="Student roll number"
+                  />
+                </label>
+
                 <button type="submit">Add Student</button>
+                <p className="helper">Adds a new student and initializes their on-chain ATT balance.</p>
               </form>
 
               <form onSubmit={handleMarkAttendance}>
                 <h3>Mark Attendance</h3>
-                <input
-                  type="text"
-                  placeholder="Comma-separated student addresses"
-                  value={presentStudents}
-                  onChange={(e) => setPresentStudents(e.target.value)}
-                  required
-                />
+
+                <label>
+                  Comma-separated student addresses
+                  <input
+                    type="text"
+                    placeholder="0xabc..., 0xdef..., 0x123..."
+                    value={presentStudents}
+                    onChange={(e) => setPresentStudents(e.target.value)}
+                    required
+                    aria-label="Comma separated addresses"
+                  />
+                </label>
+
                 <button type="submit">Mark Attendance</button>
+                <p className="helper">Example: <span className="tag">0x1..., 0x2..., 0x3...</span></p>
               </form>
-            </div>
+            </section>
           )}
 
-          <div className="student-panel">
+          <section className="student-panel">
             <h2>Student Dashboard</h2>
-            <p>Total Attendance: <strong>{attendanceCount}</strong></p>
-            <p>ATT Token Balance: <strong>{tokenBalance}</strong></p>
-          </div>
+            <div className="stats">
+              <div className="stat">
+                <div className="stat-label">Total Attendance</div>
+                <div className="stat-value">{attendanceCount}</div>
+              </div>
+              <div className="stat">
+                <div className="stat-label">ATT Token Balance</div>
+                <div className="stat-value">{tokenBalance}</div>
+              </div>
+            </div>
+          </section>
 
           <div className="student-list">
             <h3>Registered Students</h3>
             <ul>
               {allStudents.map((student, index) => (
-                <li key={index}>{student}</li>
+                <li key={index}>
+                  <strong>{student.name}</strong> 
+                  <br />
+                  <small>{student.address}</small>
+                </li>
               ))}
             </ul>
           </div>

@@ -57,4 +57,10 @@ contract AttendToken is ERC20, Ownable {
     function getAllStudents() external view returns (address[] memory) {
         return studentList;
     }
+
+    function getStudentDetails(address studentAddr) external view returns (string memory name, string memory roll, uint256 attendanceCount) {
+        Student storage student = students[studentAddr];
+        require(student.registered, "Student not registered");
+        return (student.name, student.roll, student.attendanceCount);
+    }
 }

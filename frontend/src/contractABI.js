@@ -1,4 +1,5 @@
 export const contractABI = [
+    
     {
       "inputs": [],
       "stateMutability": "nonpayable",
@@ -354,6 +355,35 @@ export const contractABI = [
         {
           "internalType": "uint256",
           "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "studentAddr",
+          "type": "address"
+        }
+      ],
+      "name": "getStudentDetails",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "roll",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "attendanceCount",
           "type": "uint256"
         }
       ],
