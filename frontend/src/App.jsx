@@ -195,9 +195,18 @@ function App() {
     }
   };
 
+  const handleRefreshData = () => {
+    if (account && contract) {
+      fetchStudentData(account, contract);
+      fetchAllStudents(contract);
+      toast.success('Data refreshed!');
+    }
+  };
+
+  /* ---------- Single centered shell (header + body together) ---------- */
   const Shell = ({ children }) => (
-    <div className="viewport">       {/* 100vh x 100vw centered */}
-      <div className="app-shell">    {/* header + body in ONE centered card */}
+    <div className="viewport">
+      <div className="app-shell">
         <header className="topbar">
           <div className="brand">
             <span className="logo-dot" />
@@ -208,6 +217,7 @@ function App() {
               <div className="wallet-wrap">
                 <span className="pill">{isOwner ? 'Teacher' : 'Student'}</span>
                 <span className="addr">{formatAddress(account)}</span>
+                <button className="btn secondary" onClick={handleRefreshData}>Refresh</button>
               </div>
             ) : (
               <button className="btn primary" onClick={connectWallet}>Connect Wallet</button>
@@ -338,11 +348,14 @@ function App() {
           </div>
         ) : (
           <div className="panel hero">
-            <h1 className="hero-title">Token-Based Attendance</h1>
-            <p className="hero-sub">
-              Reward presence with tokens. Teachers add students, select them, and mark attendance in one click.
-            </p>
-            <button className="btn primary" onClick={connectWallet}>Connect MetaMask to Start</button>
+            <div className="hero-content">
+              <h1 className="hero-title">Token-Based Attendance</h1>
+              <p className="hero-sub">
+                Reward presence with tokens. Teachers add students, select them, and mark
+                attendance in one click.
+              </p>
+              <button className="btn primary" onClick={connectWallet}>Connect MetaMask to Start</button>
+            </div>
           </div>
         )}
       </Shell>
