@@ -19,7 +19,7 @@ contract AttendToken is ERC20, Ownable {
     event StudentAdded(address indexed student, string name, string roll);
     event AttendanceMarked(address indexed student, uint256 timestamp);
 
-    constructor() ERC20("ATTEND", "ATT") {}
+    constructor() ERC20("ATTEND", "ATT") Ownable(msg.sender) {}
 
     function addStudent(address studentAddr, string calldata name, string calldata roll) external onlyOwner {
         require(!students[studentAddr].registered, "Already registered");

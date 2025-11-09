@@ -4,9 +4,12 @@ async function main() {
 
   const Attend = await ethers.getContractFactory("AttendToken");
   const attend = await Attend.deploy();
-  await attend.deployed();
+  // ethers v6 / hardhat toolbox: wait for deployment using waitForDeployment()
+  await attend.waitForDeployment();
 
-  console.log("AttendToken deployed to:", attend.address);
+  // use getAddress() to fetch the deployed contract address
+  const attendAddress = await attend.getAddress();
+  console.log("AttendToken deployed to:", attendAddress);
 }
 
 main().catch((error) => {
