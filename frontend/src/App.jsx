@@ -26,17 +26,13 @@ function App() {
   const [isMarking, setIsMarking] = useState(false);
   const [search, setSearch] = useState('');
 
-  // helpers
-  const formatAddress = (addr) =>
-    addr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : '';
+  const formatAddress = (addr) => (addr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : '');
 
   const filteredStudents = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return allStudents;
     return allStudents.filter((s) =>
-      [s.name, s.roll, s.address].some((t) =>
-        String(t ?? '').toLowerCase().includes(q)
-      )
+      [s.name, s.roll, s.address].some((t) => String(t ?? '').toLowerCase().includes(q))
     );
   }, [search, allStudents]);
 
@@ -56,7 +52,6 @@ function App() {
       const prov = new ethers.BrowserProvider(window.ethereum);
       setProvider(prov);
 
-      // Auto-handle account/network changes
       window.ethereum.on?.('accountsChanged', () => {
         setAccount(null);
         setSigner(null);
@@ -76,9 +71,7 @@ function App() {
   const connectWallet = async () => {
     if (!provider) return;
     try {
-      const accounts = await window.ethereum.request({
-        method: 'eth_requestAccounts',
-      });
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
       const s = await provider.getSigner();
       const c = new ethers.Contract(contractAddress, contractABI, s);
 
@@ -124,12 +117,10 @@ function App() {
       const studentAddresses = await contractInstance.getAllStudents();
       const studentDetails = await Promise.all(
         studentAddresses.map(async (address) => {
-          const [name, roll, count] =
-            await contractInstance.getStudentDetails(address);
+          const [name, roll, count] = await contractInstance.getStudentDetails(address);
           return { address, name, roll, attendanceCount: Number(count) };
         })
       );
-      // newest first (optional): stable order is okay too
       studentDetails.sort((a, b) => a.name.localeCompare(b.name));
       setAllStudents(studentDetails);
     } catch (error) {
@@ -167,20 +158,16 @@ function App() {
   const toggleStudentSelection = (address) => {
     if (!isOwner) return;
     setSelectedStudents((prev) =>
-      prev.includes(address)
-        ? prev.filter((a) => a !== address)
-        : [...prev, address]
+      prev.includes(address) ? prev.filter((a) => a !== address) : [...prev, address]
     );
   };
 
   const toggleSelectAllVisible = () => {
     if (!isOwner) return;
     if (allVisibleSelected) {
-      // unselect all visible
       const visibleSet = new Set(filteredStudents.map((s) => s.address));
       setSelectedStudents((prev) => prev.filter((a) => !visibleSet.has(a)));
     } else {
-      // add all visible
       const addrs = filteredStudents.map((s) => s.address);
       setSelectedStudents((prev) => Array.from(new Set([...prev, ...addrs])));
     }
@@ -208,97 +195,65 @@ function App() {
     }
   };
 
-  const handleRefreshData = () => {
-    if (account && contract) {
-      fetchStudentData(account, contract);
-      fetchAllStudents(contract);
-      toast.success('Data refreshed!');
-    }
-  };
-
-  return (
-    <div className="App">
-      <Toaster />
-      <header className="app-navbar glass">
-        <div className="nav-left">
+  const Shell = ({ children }) => (
+    <div className="viewport">       {/* 100vh x 100vw centered */}
+      <div className="app-shell">    {/* header + body in ONE centered card */}
+        <header className="topbar">
           <div className="brand">
             <span className="logo-dot" />
             <span className="brand-text">ATTendance</span>
           </div>
-        </div>
-        <div className="nav-right">
-          {account ? (
-            <div className="wallet-wrap">
-              <span className="pill">{isOwner ? 'Teacher' : 'Student'}</span>
-              <span className="addr">{formatAddress(account)}</span>
-              <button className="btn secondary" onClick={handleRefreshData}>
-                Refresh
-              </button>
-            </div>
-          ) : (
-            <button className="btn primary" onClick={connectWallet}>
-              Connect Wallet
-            </button>
-          )}
-        </div>
-      </header>
+          <div className="nav-right">
+            {account ? (
+              <div className="wallet-wrap">
+                <span className="pill">{isOwner ? 'Teacher' : 'Student'}</span>
+                <span className="addr">{formatAddress(account)}</span>
+              </div>
+            ) : (
+              <button className="btn primary" onClick={connectWallet}>Connect Wallet</button>
+            )}
+          </div>
+        </header>
+        <main className="shell-body">{children}</main>
+      </div>
+    </div>
+  );
 
-      {account ? (
-        <div className="container">
-          <main className="layout">
-            {/* LEFT: Teacher panel / profile */}
+  return (
+    <div className="App">
+      <Toaster />
+      <Shell>
+        {account ? (
+          <div className="layout">
             <aside className="sidebar panel">
               <div className="user-card">
                 <div className="avatar">{isOwner ? '👩‍🏫' : '🎓'}</div>
                 <div>
-                  <div className="user-title">
-                    {isOwner ? 'Teacher Dashboard' : 'Student Dashboard'}
-                  </div>
-                  <div className="user-subtitle">
-                    {formatAddress(account)}
-                  </div>
+                  <div className="user-title">{isOwner ? 'Teacher Dashboard' : 'Student Dashboard'}</div>
+                  <div className="user-subtitle">{formatAddress(account)}</div>
                 </div>
               </div>
 
               <div className="metric-stack">
                 <div className="metric-card">
                   <div className="metric-label">Total Attendance</div>
-                  <div className="metric-value">
-                    {isLoading ? '—' : attendanceCount}
-                  </div>
+                  <div className="metric-value">{isLoading ? '—' : attendanceCount}</div>
                 </div>
                 <div className="metric-card">
                   <div className="metric-label">ATT Token Balance</div>
-                  <div className="metric-value">
-                    {isLoading ? '—' : tokenBalance}
-                  </div>
+                  <div className="metric-value">{isLoading ? '—' : tokenBalance}</div>
                 </div>
               </div>
 
               {isOwner && (
                 <form className="add-form" onSubmit={handleAddStudent}>
                   <div className="section-title">Add Student</div>
-                  <input
-                    type="text"
-                    placeholder="Wallet address"
-                    value={studentAddress}
-                    onChange={(e) => setStudentAddress(e.target.value)}
-                    required
-                  />
-                  <input
-                    type="text"
-                    placeholder="Full name"
-                    value={studentName}
-                    onChange={(e) => setStudentName(e.target.value)}
-                    required
-                  />
-                  <input
-                    type="text"
-                    placeholder="Roll number"
-                    value={studentRoll}
-                    onChange={(e) => setStudentRoll(e.target.value)}
-                    required
-                  />
+                  <input type="text" placeholder="Wallet address" value={studentAddress}
+                    onChange={(e) => setStudentAddress(e.target.value)} required />
+                  <input type="text" placeholder="Full name" value={studentName}
+                    onChange={(e) => setStudentName(e.target.value)} required />
+                  <input type="text" placeholder="Roll number" value={studentRoll}
+                    onChange={(e) => setStudentRoll(e.target.value)} required />
                   <button className="btn primary" type="submit" disabled={isSubmitting}>
                     {isSubmitting ? 'Adding…' : 'Add Student'}
                   </button>
@@ -306,115 +261,91 @@ function App() {
               )}
             </aside>
 
-            {/* RIGHT: Students & actions */}
-            <section className="content">
-              <div className="panel">
-                <div className="content-header">
-                  <h2 className="panel-title">Registered Students</h2>
-                  <div className="actions-row">
-                    <input
-                      className="search"
-                      type="text"
-                      placeholder="Search by name, roll or address…"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
-                    {isOwner && (
-                      <button
-                        className="btn ghost"
-                        onClick={toggleSelectAllVisible}
-                        disabled={filteredStudents.length === 0}
-                        title={
-                          allVisibleSelected
-                            ? 'Unselect all visible'
-                            : 'Select all visible'
-                        }
-                      >
-                        {allVisibleSelected ? 'Unselect All' : 'Select All'}
-                      </button>
-                    )}
-                  </div>
+            <section className="content panel">
+              <div className="content-header">
+                <h2 className="panel-title">Registered Students</h2>
+                <div className="actions-row">
+                  <input
+                    className="search"
+                    type="text"
+                    placeholder="Search by name, roll or address…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                  {isOwner && (
+                    <button
+                      className="btn ghost"
+                      onClick={toggleSelectAllVisible}
+                      disabled={filteredStudents.length === 0}
+                      title={allVisibleSelected ? 'Unselect all visible' : 'Select all visible'}
+                    >
+                      {allVisibleSelected ? 'Unselect All' : 'Select All'}
+                    </button>
+                  )}
                 </div>
-
-                {isLoading ? (
-                  <div className="empty">Loading students…</div>
-                ) : filteredStudents.length === 0 ? (
-                  <div className="empty">
-                    {allStudents.length === 0
-                      ? 'No students registered yet.'
-                      : 'No matches for your search.'}
-                  </div>
-                ) : (
-                  <div className="student-grid">
-                    {filteredStudents.map((s) => {
-                      const selected = selectedStudents.includes(s.address);
-                      return (
-                        <button
-                          key={s.address}
-                          type="button"
-                          className={`student-card ${selected ? 'selected' : ''} ${
-                            isOwner ? 'clickable' : ''
-                          }`}
-                          onClick={() => toggleStudentSelection(s.address)}
-                          aria-pressed={selected}
-                        >
-                          <div className="student-top">
-                            <div className="student-name">{s.name}</div>
-                            {isOwner && (
-                              <div className={`chip ${selected ? 'ok' : 'neutral'}`}>
-                                {selected ? 'Selected' : 'Tap to select'}
-                              </div>
-                            )}
-                          </div>
-                          <div className="student-meta">
-                            <span className="badge">Roll: {s.roll}</span>
-                            <span className="badge">
-                              Attendance: {s.attendanceCount}
-                            </span>
-                          </div>
-                          <div className="student-addr">{formatAddress(s.address)}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
 
+              {isLoading ? (
+                <div className="empty">Loading students…</div>
+              ) : filteredStudents.length === 0 ? (
+                <div className="empty">
+                  {allStudents.length === 0 ? 'No students registered yet.' : 'No matches for your search.'}
+                </div>
+              ) : (
+                <div className="student-grid">
+                  {filteredStudents.map((s) => {
+                    const selected = selectedStudents.includes(s.address);
+                    return (
+                      <button
+                        key={s.address}
+                        type="button"
+                        className={`student-card ${selected ? 'selected' : ''} ${isOwner ? 'clickable' : ''}`}
+                        onClick={() => toggleStudentSelection(s.address)}
+                        aria-pressed={selected}
+                      >
+                        <div className="student-top">
+                          <div className="student-name">{s.name}</div>
+                          {isOwner && (
+                            <div className={`chip ${selected ? 'ok' : 'neutral'}`}>
+                              {selected ? 'Present' : 'Absent'}
+                            </div>
+                          )}
+                        </div>
+                        <div className="student-meta">
+                          <span className="badge">Roll: {s.roll}</span>
+                          <span className="badge">Attendance: {s.attendanceCount}</span>
+                        </div>
+                        <div className="student-addr">{formatAddress(s.address)}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               {isOwner && (
-                <div className="sticky-bar glass">
-                  <div className="sticky-info">
-                    <span>
-                      Selected: <b>{selectedStudents.length}</b>
-                    </span>
-                  </div>
+                <div className="bar-row">
+                  <div className="sticky-info">Selected: <b>{selectedStudents.length}</b></div>
                   <button
                     className="btn primary"
                     onClick={handleMarkAttendance}
                     disabled={selectedStudents.length === 0 || isMarking}
                   >
-                    {isMarking
-                      ? 'Marking…'
-                      : `Mark Attendance (${selectedStudents.length})`}
+                    {isMarking ? 'Marking…' : 'Mark Attendance'}
                   </button>
                 </div>
               )}
             </section>
-          </main>
-        </div>
-      ) : (
-        <div className="center-cta">
+          </div>
+        ) : (
           <div className="panel hero">
             <h1 className="hero-title">Token-Based Attendance</h1>
             <p className="hero-sub">
-              Reward presence with ATT tokens. Teachers add students, select them,
-              and mark attendance in one click.
+              Reward presence with tokens. Teachers add students, select them, and mark attendance in one click.
             </p>
-            <button className="btn primary" onClick={connectWallet}>
-              Connect MetaMask to Start
-            </button>
+            <button className="btn primary" onClick={connectWallet}>Connect MetaMask to Start</button>
           </div>
-        </div>
-      )}
+        )}
+      </Shell>
     </div>
   );
 }
