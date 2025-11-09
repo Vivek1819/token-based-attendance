@@ -1,0 +1,24 @@
+{
+  "name": "token-based-attendance",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "compile": "npx hardhat compile",
+    "node": "npx hardhat node",
+    "deploy-local": "npx hardhat run --network localhost scripts/deploy.js",
+    "console-local": "npx hardhat console --network localhost",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
+    "@openzeppelin/contracts": "^5.4.0",
+    "hardhat": "^2.27.0"
+  },
+  "dependencies": {
+    "ethers": "^6.15.0"
+  }
+}
