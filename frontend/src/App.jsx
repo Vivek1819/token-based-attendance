@@ -232,18 +232,16 @@ function App() {
             </div>
           </section>
 
-          <div className="student-list">
-            <h3>Registered Students</h3>
-            <ul>
-              {allStudents.map((student, index) => (
-                <li key={index}>
-                  <strong>{student.name}</strong> 
-                  <br />
-                  <small>{student.address}</small>
-                </li>
-              ))}
-            </ul>
-          </div>
+                <div className="student-list">
+        <h3>Registered Students</h3>
+        <ul>
+          {allStudents.map((student, index) => (
+            <li key={index}>
+              <strong>{student.name}</strong>&nbsp;<small>{student.address}</small>
+            </li>
+          ))}
+        </ul>
+      </div>
         </main>
       )}
     </div>
