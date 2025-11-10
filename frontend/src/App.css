@@ -59,8 +59,15 @@ body{
   border-bottom: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(20,22,30,.6), rgba(20,22,30,.25));
 }
+
 .brand{ display:flex; align-items:center; gap: calc(12px * var(--scale)); font-weight:700; }
 .brand-text{ font-size: calc(18px * var(--scale)); letter-spacing:.2px; }
+.brand.clickable:hover {
+  cursor: pointer;
+  opacity: 0.9;          /* optional nice hover feedback */
+  transition: opacity 0.15s ease;
+}
+
 .logo-dot{
   width: calc(16px * var(--scale)); height: calc(16px * var(--scale)); border-radius: 50%;
   background: conic-gradient(from 180deg, var(--brand), var(--brand-2));

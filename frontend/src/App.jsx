@@ -5,6 +5,54 @@ import { contractABI } from './contractABI';
 import './App.css';
 import toast, { Toaster } from 'react-hot-toast';
 
+/* ---- Stable Shell (hoisted) ---- */
+function Shell({
+  children,
+  account,
+  isOwner,
+  displayName,
+  formatAddress,
+  onRefresh,
+  onConnect,
+  onBrandClick,
+}) {
+  return (
+    <div className="viewport">
+      <div className="app-shell">
+        <header className="topbar">
+          <div
+            className="brand clickable"
+            onClick={onBrandClick}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onBrandClick()}
+            title="Reload page"
+          >
+            <span className="logo-dot" />
+            <span className="brand-text">ATTendance</span>
+          </div>
+
+          <div className="nav-right">
+            {account ? (
+              <div className="wallet-wrap">
+                <span className="pill">{isOwner ? 'Teacher' : 'Student'}</span>
+                {/* Name tag, when available for students */}
+                {!isOwner && displayName && <span className="tag">{displayName}</span>}
+                <span className="addr">{formatAddress(account)}</span>
+                <button className="btn secondary" onClick={onRefresh}>Refresh</button>
+              </div>
+            ) : (
+              <button className="btn primary" onClick={onConnect}>Connect Wallet</button>
+            )}
+          </div>
+        </header>
+
+        <main className="shell-body">{children}</main>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
@@ -20,6 +68,9 @@ function App() {
   const [selectedStudents, setSelectedStudents] = useState([]);
   const [attendanceCount, setAttendanceCount] = useState(0);
   const [tokenBalance, setTokenBalance] = useState(0);
+
+  const [displayName, setDisplayName] = useState('');     // <-- for header name tag
+  const [displayRoll, setDisplayRoll] = useState('');     // (not shown but stored if you need)
 
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -58,6 +109,8 @@ function App() {
         setContract(null);
         setIsOwner(false);
         setSelectedStudents([]);
+        setDisplayName('');
+        setDisplayRoll('');
       });
       window.ethereum.on?.('chainChanged', () => {
         window.location.reload();
@@ -95,13 +148,21 @@ function App() {
       setIsLoading(true);
       const isRegistered = await contractInstance.isRegistered(currentAccount);
       if (isRegistered) {
+        // You can fetch count & balance individually …
         const count = await contractInstance.getAttendanceCount(currentAccount);
         const balance = await contractInstance.balanceOf(currentAccount);
         setAttendanceCount(Number(count));
         setTokenBalance(ethers.formatUnits(balance, 18));
+
+        // … and also pull name/roll for header tag
+        const [name, roll] = await contractInstance.getStudentDetails(currentAccount);
+        setDisplayName(String(name));
+        setDisplayRoll(String(roll));
       } else {
         setAttendanceCount(0);
         setTokenBalance(0);
+        setDisplayName('');
+        setDisplayRoll('');
       }
     } catch (error) {
       console.error('Error fetching student data:', error);
@@ -114,15 +175,15 @@ function App() {
   const fetchAllStudents = async (contractInstance) => {
     try {
       setIsLoading(true);
-      const studentAddresses = await contractInstance.getAllStudents();
-      const studentDetails = await Promise.all(
-        studentAddresses.map(async (address) => {
+      const addrs = await contractInstance.getAllStudents();
+      const details = await Promise.all(
+        addrs.map(async (address) => {
           const [name, roll, count] = await contractInstance.getStudentDetails(address);
           return { address, name, roll, attendanceCount: Number(count) };
         })
       );
-      studentDetails.sort((a, b) => a.name.localeCompare(b.name));
-      setAllStudents(studentDetails);
+      details.sort((a, b) => a.name.localeCompare(b.name));
+      setAllStudents(details);
     } catch (error) {
       console.error('Error fetching all students:', error);
       toast.error('Error fetching registered students. See console for details.');
@@ -203,36 +264,23 @@ function App() {
     }
   };
 
-  /* ---------- Single centered shell (header + body together) ---------- */
-  const Shell = ({ children }) => (
-    <div className="viewport">
-      <div className="app-shell">
-        <header className="topbar">
-          <div className="brand">
-            <span className="logo-dot" />
-            <span className="brand-text">ATTendance</span>
-          </div>
-          <div className="nav-right">
-            {account ? (
-              <div className="wallet-wrap">
-                <span className="pill">{isOwner ? 'Teacher' : 'Student'}</span>
-                <span className="addr">{formatAddress(account)}</span>
-                <button className="btn secondary" onClick={handleRefreshData}>Refresh</button>
-              </div>
-            ) : (
-              <button className="btn primary" onClick={connectWallet}>Connect Wallet</button>
-            )}
-          </div>
-        </header>
-        <main className="shell-body">{children}</main>
-      </div>
-    </div>
-  );
+  const handleBrandClick = () => {
+    // full hard refresh
+    window.location.reload();
+  };
 
   return (
     <div className="App">
       <Toaster />
-      <Shell>
+      <Shell
+        account={account}
+        isOwner={isOwner}
+        displayName={displayName}
+        formatAddress={formatAddress}
+        onRefresh={handleRefreshData}
+        onConnect={connectWallet}
+        onBrandClick={handleBrandClick}
+      >
         {account ? (
           <div className="layout">
             <aside className="sidebar panel">
@@ -258,12 +306,27 @@ function App() {
               {isOwner && (
                 <form className="add-form" onSubmit={handleAddStudent}>
                   <div className="section-title">Add Student</div>
-                  <input type="text" placeholder="Wallet address" value={studentAddress}
-                    onChange={(e) => setStudentAddress(e.target.value)} required />
-                  <input type="text" placeholder="Full name" value={studentName}
-                    onChange={(e) => setStudentName(e.target.value)} required />
-                  <input type="text" placeholder="Roll number" value={studentRoll}
-                    onChange={(e) => setStudentRoll(e.target.value)} required />
+                  <input
+                    type="text"
+                    placeholder="Wallet address"
+                    value={studentAddress}
+                    onChange={(e) => setStudentAddress(e.target.value)}
+                    required
+                  />
+                  <input
+                    type="text"
+                    placeholder="Full name"
+                    value={studentName}
+                    onChange={(e) => setStudentName(e.target.value)}
+                    required
+                  />
+                  <input
+                    type="text"
+                    placeholder="Roll number"
+                    value={studentRoll}
+                    onChange={(e) => setStudentRoll(e.target.value)}
+                    required
+                  />
                   <button className="btn primary" type="submit" disabled={isSubmitting}>
                     {isSubmitting ? 'Adding…' : 'Add Student'}
                   </button>
